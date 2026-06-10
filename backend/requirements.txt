@@ -1,7 +1,7 @@
 # Core backend (all have prebuilt wheels — no compiler needed)
 fastapi>=0.110
 uvicorn[standard]>=0.29
-openai>=1.30
+openai>=1.55          # 1.55+ is compatible with httpx>=0.28 (avoids 'proxies' TypeError)
 python-dotenv>=1.0
 pydantic>=2.9          # 2.9+ ships wheels for newer Python (incl. 3.13/3.14)
 
