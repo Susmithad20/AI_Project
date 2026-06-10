@@ -1,6 +1,12 @@
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-openai==1.35.7
-python-dotenv==1.0.1
-pydantic==2.7.4
-pyodbc==5.1.0
+# Core backend (all have prebuilt wheels — no compiler needed)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+openai>=1.30
+python-dotenv>=1.0
+pydantic>=2.9          # 2.9+ ships wheels for newer Python (incl. 3.13/3.14)
+
+# Microsoft SQL Server driver — ONLY needed when USE_MOCK_DB=false.
+# Leave commented out while using mock mode. On Python 3.14 with no C++ Build
+# Tools installed, install it separately once you switch to a Python with a
+# matching prebuilt wheel (e.g. Python 3.12).
+# pyodbc>=5.1
