@@ -58,9 +58,16 @@ class ChatResponse(BaseModel):
     error: str | None = None
 
 
+def _current_engine() -> str:
+    engine = (os.getenv("DB_ENGINE") or "").strip().lower()
+    if engine:
+        return engine
+    return "mock" if os.getenv("USE_MOCK_DB", "true").lower() in ("true", "1", "yes") else "mssql"
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "mock_db": os.getenv("USE_MOCK_DB", "true")}
+    return {"status": "ok", "db_engine": _current_engine()}
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -68,9 +75,11 @@ def chat(req: ChatRequest):
     max_rows = int(os.getenv("MAX_ROWS", "200"))
     schema = (req.schema_text or "").strip() or DEFAULT_SCHEMA
 
-    # 1) Generate SQL from the email.
+    # 1) Generate SQL from the email (dialect matches the active engine).
+    engine = _current_engine()
+    dialect = "mssql" if engine == "mssql" else "sqlite"
     try:
-        sql = sql_generator.generate_sql(req.email, schema, max_rows=max_rows)
+        sql = sql_generator.generate_sql(req.email, schema, max_rows=max_rows, dialect=dialect)
     except Exception as e:
         return ChatResponse(error=f"SQL generation failed: {e}")
 

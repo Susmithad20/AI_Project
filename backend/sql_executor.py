@@ -1,12 +1,17 @@
 """
 sql_executor.py
-Validates that a generated query is READ-ONLY and (optionally) runs it
-against Microsoft SQL Server via pyodbc.
+Validates that a generated query is READ-ONLY and runs it against the
+configured database engine.
 
-Set USE_MOCK_DB=true in .env to return fake rows without a real database.
+DB_ENGINE in .env selects the backend:
+  - "sqlite" : a local file database (no install) -- the POC default
+  - "mssql"  : Microsoft SQL Server via pyodbc
+  - "mock"   : canned sample rows, no real database
 """
 import os
 import re
+import sqlite3
+from pathlib import Path
 
 # Statements that are never allowed in a read-only flow.
 _FORBIDDEN = [
@@ -93,9 +98,43 @@ def _real_run(sql: str, max_rows: int):
     return columns, rows
 
 
+def ensure_sqlite_seeded(path: str) -> None:
+    """Create + populate the SQLite file on first use if it doesn't exist."""
+    if not Path(path).exists():
+        import seed_sqlite
+        seed_sqlite.seed(path)
+
+
+def _sqlite_run(sql: str, max_rows: int):
+    path = os.getenv("SQLITE_PATH", "poc.db")
+    ensure_sqlite_seeded(path)
+
+    # Open the file READ-ONLY via URI so writes are impossible at the DB layer
+    # (a second safety net on top of validate_read_only()).
+    uri = f"file:{Path(path).as_posix()}?mode=ro"
+    with sqlite3.connect(uri, uri=True, timeout=15) as conn:
+        cursor = conn.execute(sql)
+        columns = [c[0] for c in cursor.description]
+        rows = [list(r) for r in cursor.fetchmany(max_rows)]
+    return columns, rows
+
+
+def _resolve_engine() -> str:
+    """Pick the engine: explicit DB_ENGINE wins; otherwise honor USE_MOCK_DB."""
+    engine = (os.getenv("DB_ENGINE") or "").strip().lower()
+    if engine:
+        return engine
+    if os.getenv("USE_MOCK_DB", "true").lower() in ("true", "1", "yes"):
+        return "mock"
+    return "mssql"
+
+
 def run_query(sql: str, max_rows: int = 200):
     """Validate then execute. Returns (columns, rows). Raises UnsafeQueryError."""
     safe_sql = validate_read_only(sql)
-    if os.getenv("USE_MOCK_DB", "true").lower() in ("true", "1", "yes"):
+    engine = _resolve_engine()
+    if engine == "mock":
         return _mock_run(safe_sql, max_rows)
+    if engine == "sqlite":
+        return _sqlite_run(safe_sql, max_rows)
     return _real_run(safe_sql, max_rows)

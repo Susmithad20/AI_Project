@@ -10,5 +10,10 @@ node_modules/
 frontend/dist/
 frontend/.env
 
+# Local SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+
 # Misc
 .DS_Store

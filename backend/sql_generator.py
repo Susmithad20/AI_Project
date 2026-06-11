@@ -20,7 +20,21 @@ def _get_client() -> OpenAI:
     return _client
 
 
-SYSTEM_PROMPT = """You are a senior data analyst that writes Microsoft SQL Server (T-SQL) queries.
+# Per-dialect syntax guidance injected into the system prompt.
+_DIALECTS = {
+    "mssql": {
+        "name": "Microsoft SQL Server (T-SQL)",
+        "syntax": "Use T-SQL syntax (e.g. TOP instead of LIMIT, GETDATE() for current time).",
+        "cap": "Always cap rows with `SELECT TOP ({max_rows}) ...`",
+    },
+    "sqlite": {
+        "name": "SQLite",
+        "syntax": "Use SQLite syntax (LIMIT instead of TOP, date('now') for current time).",
+        "cap": "Always cap rows with a trailing `LIMIT {max_rows}`",
+    },
+}
+
+SYSTEM_PROMPT = """You are a senior data analyst that writes {dialect_name} queries.
 
 You are given:
 1. A database SCHEMA.
@@ -32,9 +46,8 @@ Hard rules:
 - ONLY a SELECT statement (or a WITH ... SELECT CTE). Never INSERT, UPDATE, DELETE,
   MERGE, DROP, ALTER, CREATE, TRUNCATE, GRANT, EXEC or any data-modifying statement.
 - Use only tables and columns that exist in the provided SCHEMA.
-- Use T-SQL syntax (e.g. TOP instead of LIMIT, GETDATE() for current time).
-- Always cap rows with `SELECT TOP (N) ...` (use N = {max_rows}) unless the email
-  clearly asks for a single aggregate value.
+- {dialect_syntax}
+- {dialect_cap} unless the email clearly asks for a single aggregate value.
 - Do not invent columns. If the email is ambiguous, make a reasonable assumption.
 - Return ONLY the SQL. No explanation, no markdown fences.
 """
@@ -49,10 +62,17 @@ def _strip_code_fences(text: str) -> str:
     return text
 
 
-def generate_sql(email: str, schema: str, max_rows: int = 200) -> str:
-    """Generate a read-only T-SQL SELECT query from an email + schema."""
+def generate_sql(email: str, schema: str, max_rows: int = 200, dialect: str = "sqlite") -> str:
+    """Generate a read-only SELECT query from an email + schema for `dialect`."""
     client = _get_client()
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    d = _DIALECTS.get(dialect, _DIALECTS["sqlite"])
+    system_prompt = SYSTEM_PROMPT.format(
+        dialect_name=d["name"],
+        dialect_syntax=d["syntax"],
+        dialect_cap=d["cap"].format(max_rows=max_rows),
+    )
 
     user_prompt = (
         f"SCHEMA:\n{schema.strip()}\n\n"
@@ -64,7 +84,7 @@ def generate_sql(email: str, schema: str, max_rows: int = 200) -> str:
         model=model,
         temperature=0,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT.format(max_rows=max_rows)},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
     )

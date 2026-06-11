@@ -8,11 +8,19 @@ A simplified proof-of-concept that automates the daily workflow:
 Here, you paste the email into a **chat UI**. The system:
 
 1. **sql-generator** — uses OpenAI to turn the email + schema into a **read-only**
-   T-SQL `SELECT`.
-2. **sql-executor** — validates the query is read-only, then runs it on Microsoft
-   SQL Server (or returns mock rows until your DB is connected).
+   `SELECT` (SQLite or T-SQL dialect, depending on the configured engine).
+2. **sql-executor** — validates the query is read-only, then runs it against the
+   configured database (local **SQLite** by default, or Microsoft SQL Server).
 3. **report-generator** — summarizes the results in plain English and shows the
    table back in the chat. (No document export in this POC — reply in chat only.)
+
+The database backend is chosen with `DB_ENGINE` in `.env`:
+
+| `DB_ENGINE` | What it does | Setup needed |
+|-------------|--------------|--------------|
+| `sqlite` (default) | Local file database, auto-seeded with sample data | **None** — runs immediately |
+| `mssql` | Microsoft SQL Server via pyodbc | ODBC driver + a SQL Server (see §3) |
+| `mock` | Returns canned sample rows | None |
 
 ```
 React chat  ──POST /api/chat──►  FastAPI backend
@@ -35,8 +43,9 @@ AI_Project/
 ├── backend/
 │   ├── main.py              # FastAPI app, wires the 3 components
 │   ├── sql_generator.py     # email + schema -> SQL (OpenAI)
-│   ├── sql_executor.py      # read-only validation + MSSQL execution
+│   ├── sql_executor.py      # read-only validation + SQLite/MSSQL execution
 │   ├── report_generator.py  # results -> chat summary (OpenAI)
+│   ├── seed_sqlite.py       # creates/seeds the local SQLite sample database
 │   ├── schema_example.sql   # sample schema to paste into the UI
 │   ├── requirements.txt
 │   └── .env.example
@@ -60,8 +69,11 @@ cp .env.example .env               # then edit .env
 Edit `backend/.env`:
 
 - Set `OPENAI_API_KEY`.
-- Leave `USE_MOCK_DB=true` to try it without a database.
-- Set `USE_MOCK_DB=false` and fill the `MSSQL_*` values once your DB is ready.
+- Leave `DB_ENGINE=sqlite` to run against a local file database with **no install**.
+  It is auto-created and seeded with sample `customers`/`orders` data on first use.
+  (To reset/reseed the data manually: `python seed_sqlite.py`.)
+- Switch to `DB_ENGINE=mssql` and fill the `MSSQL_*` values to use a real SQL
+  Server (see §3).
 
 Run it:
 
@@ -69,7 +81,7 @@ Run it:
 uvicorn main:app --reload --port 8000
 ```
 
-Health check: <http://localhost:8000/api/health>
+Health check: <http://localhost:8000/api/health> — shows the active `db_engine`.
 
 ## 2. Frontend setup
 
